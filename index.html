@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>ArcGIS REST Scraper</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-beta1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-0evHe/X+R7YkIZDRvuzKMRqM+OrBnVFBL6DOitfPri4tjfHxaWutUpFmBp4vmVor" crossorigin="anonymous">
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" rel="stylesheet" integrity="sha512-KfkfwYDsLkIlwQp6LFnl8zNdLGxu9YAA1QvwINks4PhcElQSvqcyVLLD9aMhXd13uQjoXtEKNosOWaZqXgel0g==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+        <link type="text/css" rel="stylesheet" href="https://www.gstatic.com/firebasejs/ui/6.0.1/firebase-ui-auth.css" />
+    </head>
+    <body>
+        <div class="container">
+            <nav class="navbar navbar-expand-lg bg-light">
+                <h1 class="navbar-brand m-3">Balderdash.io</h1>
+                <span id="currentUser" class="navbar-text ms-auto d-none">Current User</span>
+                <button id="signOut" class="btn btn-secondary m-3 d-none">Sign Out</button>
+            </nav>
+            <div id="userOptions" class="mx-auto d-none">
+                <button id="btnPlayAnonymously" type="button" class="btn btn-primary">Play Anonymously</button>
+                or
+                <button id="btnSignInModal" type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#signInModal">Sign In</button>
+            </div>
+            <div id="joinOptions" class="d-none">
+                <form>
+                    <div class="mb-3">
+                        <label for="lobbyName" class="form-label">Display Name</label>
+                        <input type="text" name="lobbyName" class="form-control" id="lobbyName">
+                    </div>
+                    <div class="mb-3">
+                        <label for="gameName" class="form-label">Game Name</label>
+                        <input type="text" name="gameName" class="form-control" id="gameName">
+                    </div>
+                    <button id="btnJoin" type="button" class="btn btn-primary">Join</button>
+                </form>
+            </div>
+            <div id="gameData" class="row d-none">
+                <div class="col">
+                    <form>
+                        <div class="mb-3">
+                            <label for="phase" class="form-label">Phase</label>
+                            <input type="text" name="phase" class="form-control" id="phase" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="currentWord" class="form-label">Current Word</label>
+                            <input type="text" name="currentWord" class="form-control" id="currentWord" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="pastWords" class="form-label">PastWords</label>
+                            <ul id="pastWords" class="list-group"></ul>
+                        </div>
+                    </form>
+                </div>
+                <div class="col">
+
+                </div>
+                <div class="col">
+                    <div class="row">
+                        <div class="mb-3">
+                            <label for="members" class="form-label">Members</label>
+                            <ul id="members" class="list-group"></ul>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div id="lobbyDiv" class="mb-3 d-none">
+                            <label for="lobby" class="form-label">Lobby</label>
+                            <ul id="lobby" class="list-group"></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal fade" id="signInModal" tabindex="-1" aria-labelledby="signInModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="signInModalLabel">Sign In</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="signInForm">
+                                <div class="mb-3">
+                                    <label for="signInEmail" class="form-label">Email address</label>
+                                    <input type="email" name="email" class="form-control" id="signInEmail" placeholder="name@example.com">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="signInPassword" class="form-label">Password</label>
+                                    <input type="password" name="password" class="form-control" id="signInPassword">
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button id="signIn" type="submit" class="btn btn-primary">Sign In</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1/dist/es-module-shims.min.js" crossorigin="anonymous"></script>
+        <script type="importmap">
+        {
+            "imports": {
+                "@popperjs/core": "https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.5/dist/umd/popper.min.js",
+                "bootstrap": "https://cdn.jsdelivr.net/npm/bootstrap@5.2.0/dist/js/bootstrap.esm.min.js"
+            }
+        }
+        </script>    
+        <script defer type="module" src="js/index.js"></script>
+    </body>
+</html>
