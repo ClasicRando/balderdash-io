@@ -12,6 +12,7 @@
         <div class="container">
             <nav class="navbar navbar-expand-lg bg-light">
                 <h1 class="navbar-brand m-3">Balderdash.io</h1>
+                <span id="gameName" class="navbar-test me-auto d-none"></span>
                 <span id="currentUser" class="navbar-text ms-auto d-none">Current User</span>
                 <button id="signOut" class="btn btn-secondary m-3 d-none">Sign Out</button>
             </nav>
@@ -41,6 +42,9 @@
                             <input type="text" name="phase" class="form-control" id="phase" readonly>
                         </div>
                         <div class="mb-3">
+                            <button id="btnNextRound" type="button" class="btn btn-primary d-none">Next Round</button>
+                        </div>
+                        <div class="mb-3">
                             <label for="currentWord" class="form-label">Current Word</label>
                             <input type="text" name="currentWord" class="form-control" id="currentWord" readonly>
                         </div>
@@ -51,7 +55,26 @@
                     </form>
                 </div>
                 <div class="col">
-
+                    <div id="definitionSubmit" class="row d-none">
+                        <div class="mb-3">
+                            <label for="definition" class="form-label">Definition</label>
+                            <input type="text" name="definition" class="form-control" id="definition">
+                        </div>
+                        <button id="btnDefSumbit" type="button" class="btn btn-primary">Submit</button>
+                    </div>
+                    <div id="guessSubmit" class="row d-none">
+                        <div class="mb-3">
+                            <label for="guess" class="form-label">Guess</label>
+                            <input type="number" name="guess" class="form-control" id="guess">
+                        </div>
+                        <button id="btnGuessSumbit" type="button" class="btn btn-primary">Submit</button>
+                    </div>
+                    <div id="definitions" class="row d-none">
+                        <div class="mb-3">
+                            <label for="definitionsList" class="form-label">Definitions</label>
+                            <ol id="definitionsList" class="list-group list-group-numbered"></ol>
+                        </div>
+                    </div>
                 </div>
                 <div class="col">
                     <div class="row">
