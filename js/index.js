@@ -1,8 +1,13 @@
 import * as bootstrap from "bootstrap"
 // Import the functions you need from the SDKs you need
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/9.9.2/firebase-auth.js"
+import {
+    getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, signInAnonymously
+} from "https://www.gstatic.com/firebasejs/9.9.2/firebase-auth.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.9.2/firebase-app.js";
-import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, limit, deleteDoc, getFirestore, onSnapshot, updateDoc, arrayUnion, increment } from "https://www.gstatic.com/firebasejs/9.9.2/firebase-firestore.js";
+import {
+    doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, limit, deleteDoc,
+    getFirestore, onSnapshot, updateDoc, writeBatch, increment, arrayUnion
+} from "https://www.gstatic.com/firebasejs/9.9.2/firebase-firestore.js";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 // Your web app's Firebase configuration
@@ -28,6 +33,7 @@ let joinLobbyReference = null;
 let joinListener = null;
 let definitionsListener = null;
 let guessessListener = null;
+let submittedListener = null;
 /** @type {HTMLDivElement} */
 const signInModalElement = document.querySelector("#signInModal");
 const signInModal = new bootstrap.Modal(signInModalElement);
@@ -51,20 +57,16 @@ const signOutButton = document.querySelector("#signOut");
 const gameData = document.querySelector("#gameData");
 /** @type {HTMLButtonElement} */
 const btnJoin = document.querySelector("#btnJoin");
-/** @type {HTMLDivElement} */
+/** @type {HTMLFormElement} */
 const definitionSubmit = document.querySelector("#definitionSubmit");
-/** @type {HTMLButtonElement} */
-const btnDefSumbit = document.querySelector("#btnDefSumbit");
 /** @type {HTMLDivElement} */
 const definitions = document.querySelector("#definitions");
 /** @type {HTMLOListElement} */
 const definitionsList = document.querySelector("#definitionsList");
 /** @type {HTMLSpanElement} */
 const gameName = document.querySelector("#gameName");
-/** @type {HTMLDivElement} */
+/** @type {HTMLFormElement} */
 const guessSubmit = document.querySelector("#guessSubmit");
-/** @type {HTMLButtonElement} */
-const btnGuessSumbit = document.querySelector("#btnGuessSumbit");
 
 function shuffle(array) {
     let currentIndex = array.length,  randomIndex;
@@ -83,6 +85,136 @@ function shuffle(array) {
     return array;
 }
 
+function isNumber(value) {
+    if (typeof value == "number") {
+        return true;
+    } else if (typeof value == "string") {
+        return value.match(/^\d+$/);
+    }
+    return false;
+}
+
+/**
+ * 
+ * @param {DocumentReference} docRef
+ */
+async function _deleteDoc(docRef) {
+    try {
+        await deleteDoc(docRef);
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+/**
+ * 
+ * @param {DocumentReference} docRef
+ * @returns {Promise<DocumentSnapshot?>}
+ */
+async function _getDoc(docRef) {
+    try {
+        const resultDoc = await getDoc(docRef);
+        return resultDoc != null && resultDoc.exists()
+            ? resultDoc
+            : null;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+/**
+ * 
+ * @param {Query} query
+ * @param {(DocumentSnapshot) => void} action
+ * @returns {Promise<QuerySnapshot?>}
+ */
+async function _getDocs(query, action=undefined) {
+    try {
+        const docs = await getDocs(query);
+        if (typeof action !== "undefined") {
+            docs.forEach(action);
+        }
+        return docs;
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+/**
+ * 
+ * @param {CollectionReference} collectionRef
+ * @param {Object} data
+ * @returns {Promise<DocumentReference?>}
+ */
+async function _addDoc(collectionRef, data) {
+    try {
+        return await addDoc(collectionRef, data);
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+/**
+ * 
+ * @param {DocumentReference} docRef
+ * @param {Object} data
+ */
+async function _setDoc(docRef, data) {
+    try {
+        await setDoc(docRef, data);
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+/**
+ * 
+ * @param {DocumentReference} docRef
+ * @param {Object} data
+ */
+async function _updateDoc(docRef, data) {
+    try {
+        await updateDoc(docRef, data);
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+/**
+ * 
+ * @param {DocumentReference | CollectionReference} reference
+ * @param {(DocumentSnapshot) => void | Promise<void>} onNext
+ * @param {(FirestoreError) => void | Promise<void>} onError
+ * @param {() => void | Promise<void>} onCompletion
+ * @returns {Unsubscribe?}
+ */
+function _onSnapshot(reference, onNext, onError=undefined, onCompletion=undefined) {
+    try {
+        return onSnapshot(reference, onNext, onError, onCompletion);
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
+
+/**
+ * 
+ * @param {WriteBatch} batch
+ * @returns {Promise<boolean>}
+ */
+async function commitBatch(batch) {
+    try {
+        await batch.commit();
+        return true;
+    } catch (error) {
+        console.error(error);
+        return false;
+    }
+}
+
 onAuthStateChanged(auth, async (user) => {
     const wasSignedIn = typeof(currentUser) != "undefined";
     if (wasSignedIn) {
@@ -96,13 +228,13 @@ onAuthStateChanged(auth, async (user) => {
         showElement(signOutButton);
         hideElement(userOptions);
         const game = await getCurrentGame();
-        if (game != null) {
-            showElement(gameName);
-            currentGameId = game.id;
-            setListeners(game);
-        } else {
+        if (game == null) {
             showElement(joinOptions);
+            return;
         }
+        showElement(gameName);
+        currentGameId = game.id;
+        setListeners(game);
     } else {
         showElement(userOptions);
     }
@@ -131,7 +263,6 @@ btnPlayAnonymously.addEventListener("click", async () => {
 signOutButton.addEventListener("click", async () => {
     try {
         await signOut(auth);
-        window.location.reload(true);
     } catch (error) {
         console.error(error);
     }
@@ -140,11 +271,7 @@ btnJoin.addEventListener("click", async () => {
     if (joinListener != null) {
         joinListener();
         joinListener = null;
-        try {
-            await deleteDoc(joinLobbyReference);
-        } catch (error) {
-            console.error(error);
-        }
+        await _deleteDoc(joinLobbyReference);
         btnJoin.innerText = "Join";
         return;
     }
@@ -155,99 +282,113 @@ btnJoin.addEventListener("click", async () => {
         return;
     }
     btnJoin.innerText = "Cancel";
-    try {
-        joinLobbyReference = await addDoc(collection(db, "lobby"), {
-            displayName: lobbyName,
-            userId: currentUser.uid,
-            gameName: gameName,
-        });
-    } catch (error) {
-        console.error(error);
+    const joinLobbyReference = await _addDoc(collection(db, "lobby"), {
+        displayName: lobbyName,
+        userId: currentUser.uid,
+        gameName: gameName,
+    });
+    if (joinLobbyReference == null) {
         btnJoin.innerText = "Join";
+        return;
     }
-    try {
-        joinListener = onSnapshot(joinLobbyReference, async (doc) => {
-            if (doc != null && doc.exists()) {
-                console.log(doc);
-                return;
-            }
-            await checkUserGame(gameName);
-        }, async () => {
-            await checkUserGame(gameName);
-        });
-    } catch (error) {
-        console.error(error);
+    joinListener = _onSnapshot(joinLobbyReference, async (doc) => {
+        if (doc != null && doc.exists()) {
+            console.log(doc);
+            return;
+        }
+        await checkUserGame(gameName);
+    }, async () => {
+        await checkUserGame(gameName);
+    });
+    if (joinListener == null) {
         btnJoin.innerText = "Join";
     }
 });
-btnDefSumbit.addEventListener("click", async () => {
-    const value = definitionSubmit.querySelector("#definition").value.trim();
-    if (!value) {
-        console.log("Empty definition");
+definitionSubmit.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const definitionInput = definitionSubmit.querySelector("#definition");
+    const value = definitionInput.value.trim();
+    const invalidInput = definitionSubmit.querySelector(".invalid-feedback");
+    if (invalidInput != null) {
+        invalidInput.remove();
+    }
+    if (!value || !definitionSubmit.checkValidity()) {
+        const invalidInput = document.createElement("div");
+        invalidInput.classList.add("invalid-feedback");
+        invalidInput.innerText = "Definition cannot be empty"
+        definitionInput.parentElement.appendChild(invalidInput);
+        definitionSubmit.classList.add("was-validated");
         return;
     }
-    try {
-        await addDoc(collection(db, "definitionQueue", currentGameId, "definitions"), {
-            userId: currentUser.uid,
-            value: value,
-        });
-        hideElement(definitionSubmit)
-    } catch (error) {
-        console.error(error);
+    const defDoc = await _addDoc(collection(db, "definitionQueue", currentGameId, "definitions"), {
+        userId: currentUser.uid,
+        value: value,
+    });
+    if (defDoc == null) {
+        console.log("error adding definitions")
     }
+    hideElement(definitionSubmit);
 });
-btnGuessSumbit.addEventListener("click", async () => {
-    const value = guessSubmit.querySelector("#guess").value.trim();
-    if (!value || !value.match(/^\d+$/g)) {
-        console.log("Empty guess");
+guessSubmit.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const guessInput = guessSubmit.querySelector("#guess");
+    const value = guessInput.value.trim();
+    const invalidInput = guessSubmit.querySelectorAll(".invalid-feedback");
+    Array.from(invalidInput).forEach(i => i.remove());
+    if (!value || !Number.isInteger(value)) {
+        const invalidInput = document.createElement("div");
+        invalidInput.classList.add("invalid-feedback");
+        invalidInput.innerText = "Guess must be a number"
+        guessInput.parentElement.appendChild(invalidInput);
+        guessSubmit.classList.add("was-validated");
         return;
     }
-    if (!value.match(/^\d+$/g)) {
-        console.log("Guess must be a number");
+    const guessNumber = Number.parseInt(value);
+    const gameDoc = await getGame(doc(db, "games", currentGameId));
+    if (guessNumber <= 0 || guessNumber > gameDoc.data().definitions.length) {
+        const invalidInput = document.createElement("div");
+        invalidInput.classList.add("invalid-feedback");
+        invalidInput.innerText = "Guess must be a valid number"
+        guessInput.parentElement.appendChild(invalidInput);
+        guessSubmit.classList.add("was-validated");
         return;
     }
-    try {
-        await addDoc(collection(db, "guessQueue", currentGameId, "guesses"), {
-            userId: currentUser.uid,
-            value: Number.parseInt(value),
-        });
-        hideElement(guessSubmit)
-    } catch (error) {
-        console.error(error);
+    const guessDoc = await _addDoc(collection(db, "guessQueue", currentGameId, "guesses"), {
+        userId: currentUser.uid,
+        value: Number.parseInt(value),
+    });
+    if (guessDoc == null) {
+        console.log("error adding definitions")
     }
+    hideElement(guessSubmit);
 });
 
 async function checkUserGame(gameName) {
-    try {
-        const gameUser = await getDoc(doc(db, "games", gameName, "users", currentUser.uid));
-        if (gameUser != null && gameUser.exists()) {
-            hideElement(joinOptions);
-            const game = await getDoc(doc(db, "games", gameName));
-            setListeners(game);
-        } else {
-            btnJoin.innerText = "Join";
-        }
-    } catch (error) {
-        console.log(error);
+    const gameUser = await _getDoc(doc(db, "games", gameName, "users", currentUser.uid));
+    if (gameUser == null) {
         btnJoin.innerText = "Join";
+        return;
     }
+    hideElement(joinOptions);
+    const game = await _getDoc(doc(db, "games", gameName));
+    if (game == null) {
+        btnJoin.innerText = "Join";
+        return;
+    }
+    setListeners(game);
 }
 
 async function getCurrentUser() {
-    try {
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        return userDoc != null && userDoc.exists() ? userDoc : null;
-    } catch (error) {
-        console.error(error);
-        return null;
-    }
+    return await _getDoc(doc(db, "users", currentUser.uid));
 }
 
 async function getCurrentGame() {
     if (currentUser.isAnonymous) {
         let userDoc = await getCurrentUser();
         if (userDoc == null) {
-            const docRef = await setDoc(doc(db, "users", currentUser.uid), {
+            await _setDoc(doc(db, "users", currentUser.uid), {
                 isAdmin: false,
                 currentGame: null,
             });
@@ -257,15 +398,10 @@ async function getCurrentGame() {
         if (!gameId) {
             return null;
         }
-        try {
-            return await getDoc(doc(db, "games", gameId));
-        } catch (error) {
-            console.error(error);
-            return null;
-        }
+        return await _getDoc(doc(db, "games", gameId));
     }
     const gameQuery = query(collection(db, "games"), where("ownerUID", "==", currentUser.uid), limit(1));
-    const shapshot = await getDocs(gameQuery);
+    const shapshot = await _getDocs(gameQuery);
     return shapshot.size > 0 ? shapshot.docs[0] : null;
 }
 
@@ -296,59 +432,69 @@ function removeAllChildren(element) {
 }
 
 async function getGame(gameRef) {
-    try {
-        return await getDoc(gameRef);
-    } catch (error) {
-        console.error(error);
+    return await _getDoc(gameRef);
+}
+
+/**
+ * 
+ * @param {Map} map
+ * @param {string} id
+ * @param {any} value 
+ */
+function updateMap(map, id, value) {
+    if (map.has(id)) {
+        map.set(id, map.get(id) + value);
+    } else {
+        map.set(id, value);
+    }
+}
+
+async function calculateScores(gameRef) {
+    const gameDoc = await _getDoc(gameRef);
+    const currentWord = gameDoc.data().currentWord;
+    const gameDefinitions = gameDoc.data().definitions||[];
+    if (!gameDefinitions) {
         return;
     }
+    const scoreMap = new Map();
+    for (const def of gameDefinitions) {
+        if (def.source === "Actual") {
+            for (const id of def.guessedByIds) {
+                updateMap(scoreMap, id, 1);
+            }
+            continue;
+        }
+        updateMap(scoreMap, def.sourceId, def.guessedByIds.filter(id => id != def.sourceId).length);
+    }
+    const batch = writeBatch(db);
+    console.log(scoreMap);
+    for (const [key, value] of scoreMap) {
+        batch.update(doc(gameRef, "users", key), {
+            score: increment(value),
+        })
+    }
+    batch.update(gameRef, {
+        phase: "round-end",
+        usedWords: arrayUnion(currentWord),
+    });
+    commitBatch(batch);
 }
 
 function setListeners(game) {
     const gameId = game.id;
+    currentGameId = gameId;
     gameName.innerText = gameId;
     const isOwner = game.data().ownerUID == currentUser.uid;
     showElement(gameData);
     const currentWord = gameData.querySelector("#currentWord");
     const phase = gameData.querySelector("#phase");
     const nextRound = gameData.querySelector("#btnNextRound");
-    if (isOwner) {
-        nextRound.addEventListener("click", async () => {
-            const usedWords = (await getGame(game.ref)).data().usedWords||[];
-            const words = [];
-            let currentWord;
-            try {
-                (await getDocs(query(collection(db, "words")))).forEach((word) => {
-                    words.push(word.id);
-                });
-            } catch (error) {
-                console.error(error);
-                return;
-            }
-            for (const word of shuffle(words)) {
-                if (!usedWords.includes(word)) {
-                    currentWord = word;
-                    break;
-                }
-            }
-            console.log(currentWord);
-            try {
-                await updateDoc(game.ref, {
-                    phase: "submit-definition",
-                    currentWord: currentWord,
-                });
-            } catch (error) {
-                console.error(error);
-                return;
-            }
-        });
-    }
     const pastWords = gameData.querySelector("#pastWords");
     const members = gameData.querySelector("#members");
     const lobby = gameData.querySelector("#lobby");
     removeAllChildren(pastWords);
     removeAllChildren(lobby);
-    gameListener = onSnapshot(game.ref, async (doc) => {
+    gameListener = _onSnapshot(game.ref, async (doc) => {
         const data = doc.data();
         currentWord.value = data.currentWord;
         if (isOwner && (data.phase == "round-end" || data.phase == "pre-game")) {
@@ -359,7 +505,6 @@ function setListeners(game) {
         phase.value = data.phase;
         switch (data.phase) {
             case "pre-game":
-            case "round-end":
                 hideElement(definitionSubmit);
                 hideElement(guessSubmit);
                 hideElement(definitions);
@@ -392,6 +537,33 @@ function setListeners(game) {
                 }
                 hideElement(definitionSubmit);
                 break;
+            case "update-scores":
+                if (isOwner) {
+                    await calculateScores(game.ref);
+                }
+                break;
+            case "round-end":
+                hideElement(definitionSubmit);
+                hideElement(guessSubmit);
+                showElement(definitions);
+                removeAllChildren(definitionsList);
+                if ("definitions" in data) {
+                    for (const d of data.definitions) {
+                        const item = document.createElement("li");
+                        item.classList.add("list-group-item");
+                        const def = document.createElement("p");
+                        def.innerText = `Definition: ${d.definition}`;
+                        const guessedBy = document.createElement("p");
+                        guessedBy.innerText = `Guessed By: ${d.guessedBy.join(",")}`;
+                        const source = document.createElement("p");
+                        source.innerText = `Source: ${d.source}`;
+                        item.appendChild(def);
+                        item.appendChild(guessedBy);
+                        item.appendChild(source);
+                        definitionsList.appendChild(item);
+                    }
+                }
+                break;
         }
         removeAllChildren(pastWords);
         for (const word of data.usedWords) {
@@ -401,7 +573,7 @@ function setListeners(game) {
             pastWords.appendChild(item);
         }
     });
-    gameUserListener = onSnapshot(collection(game.ref, "users"), async (shapshot) => {
+    gameUserListener = _onSnapshot(collection(game.ref, "users"), async (shapshot) => {
         removeAllChildren(members);
         let submitCount = 0;
         shapshot.forEach((gameUserDoc) => {
@@ -427,91 +599,119 @@ function setListeners(game) {
             item.appendChild(score);
             members.appendChild(item);
         });
-        if (shapshot.size === submitCount && isOwner) {
-            shapshot.forEach(async (gameUserDoc) => {
-                await updateDoc(gameUserDoc.ref, {
-                    submitted: false,
-                });
+    });
+    if (isOwner) {
+        nextRound.addEventListener("click", async () => {
+            const usedWords = (await getGame(game.ref)).data().usedWords||[];
+            const words = [];
+            let currentWord;
+            await _getDocs(query(collection(db, "words")), (word) => {
+                words.push(word.id);
             });
-            let gameDoc;
-            try {
-                gameDoc = await getDoc(game.ref);
-            } catch (error) {
-                console.error(error);
-                return;
+            for (const word of shuffle(words)) {
+                if (!usedWords.includes(word)) {
+                    currentWord = word;
+                    break;
+                }
             }
-            const currentPhase = gameDoc.data().phase;
-            const currentWord = gameDoc.data().currentWord;
-            const currentDefinitions = gameDoc.data().definitions||[];
-            if (currentPhase == "submit-definition") {
-                const submittedDefinitions = [];
-                (await getDocs(collection(db, "definitionQueue", currentGameId, "definitions"))).forEach((defDoc) => {
-                    submittedDefinitions.push(defDoc.data().value.toLowerCase());
+            await _updateDoc(game.ref, {
+                phase: "submit-definition",
+                currentWord: currentWord,
+                definitions: [],
+            });
+        });
+        showElement(gameData.querySelector("#lobbyDiv"));
+        const submittedQuery = query(collection(game.ref, "users"), where("submitted", "==", true));
+        submittedListener = _onSnapshot(submittedQuery, async (submitted) => {
+            const users = await _getDocs(collection(game.ref, "users"));
+            const userCount = users != null ? users.size : 0;
+            if (userCount > 0 && userCount == submitted.size) {
+                const batch = writeBatch(db);
+                users.forEach(async (gameUserDoc) => {
+                    batch.update(gameUserDoc.ref, {
+                        submitted: false,
+                    });
                 });
-                const actualDefinition = await getDoc(doc(db, "words", currentWord));
-                submittedDefinitions.push(actualDefinition.data().definition);
-                try {
-                    await updateDoc(game.ref, {
+                let gameDoc = await _getDoc(game.ref);
+                const currentPhase = gameDoc.data().phase;
+                const gameWord = gameDoc.data().currentWord;
+                if (currentPhase == "submit-definition") {
+                    const actualDefinition = gameWord != null
+                        ? (await _getDoc(doc(db, "words", gameWord))).data().definition
+                        : "";
+                    const submittedDefinitions = [];
+                    await _getDocs(collection(db, "definitionQueue", currentGameId, "definitions"), (defDoc) => {
+                        submittedDefinitions.push(defDoc.data().value.toLowerCase());
+                    });
+                    submittedDefinitions.push(actualDefinition);
+                    batch.update(game.ref, {
                         phase: "submit-guess",
                         guesses: [],
                         definitions: shuffle(submittedDefinitions),
                     });
-                } catch (error) {
-                    console.error(error);
-                    return;
-                }
-            } else if (currentPhase == "submit-guess") {
-                const submittedGuesses = [];
-                const guessDocs = await getDocs(collection(db, "guessQueue", currentGameId, "guesses"));
-                for (const guessDoc of guessDocs.docs) {
-                    submittedGuesses.push(guessDoc.data());
-                    await deleteDoc(guessDoc.ref);
-                }
-                const definitionMap = new Map();
-                const scoreMap = new Map();
-                const definitionDocs = await getDocs(collection(db, "definitionQueue", currentGameId, "definitions"));
-                for (const defDoc of definitionDocs.docs) {
-                    const defDocData = defDoc.data();
-                    definitionMap.set(defDocData.value, defDocData.userId);
-                    scoreMap.set(defDocData.userId, 0);
-                    await deleteDoc(defDoc.ref);
-                }
-                for (const sg of submittedGuesses) {
-                    const guess = currentDefinitions[sg.value - 1];
-                    const defUser = definitionMap.get(guess);
-                    if (typeof defUser !== "undefined") {
-                        scoreMap.set(defUser, scoreMap.get(defUser) + 1);
-                    } else {
-                        scoreMap.set(sg.userId, scoreMap.get(sg.userId) + 1)
-                    }
-                }
-                try {
-                    await updateDoc(game.ref, {
-                        phase: "round-end",
-                        definitions: [],
-                        usedWords: arrayUnion(currentWord),
-                        currentWord: null,
+                } else if (currentPhase == "submit-guess") {
+                    const currentDefinitions = gameDoc.data().definitions;
+                    const submittedGuesses = new Map();
+                    await _getDocs(collection(db, "guessQueue", currentGameId, "guesses"), (guessDoc) => {
+                        const guessDocData = guessDoc.data();
+                        const guessDefinition = currentDefinitions[guessDocData.value - 1];
+                        const currentIds = submittedGuesses.get(guessDefinition);
+                        if (typeof currentIds === "undefined") {
+                            submittedGuesses.set(guessDefinition, [guessDocData.userId]);
+                        } else {
+                            currentIds.push(guessDocData.userId)
+                            submittedGuesses.set(guessDefinition, currentIds);
+                        }
+                        batch.delete(guessDoc.ref);
                     });
-                } catch (error) {
-                    console.error(error);
-                    return;
-                }
-                for (const gameUserDoc of shapshot.docs) {
-                    const newScore = scoreMap.get(gameUserDoc.id);
-                    if (typeof newScore !== "undefined") {
-                        await updateDoc(gameUserDoc.ref, {
-                            submitted: false,
-                            score: increment(newScore),
+                    const definitionMap = new Map();
+                    await _getDocs(collection(db, "definitionQueue", currentGameId, "definitions"), (defDoc) => {
+                        const defDocData = defDoc.data();
+                        definitionMap.set(defDocData.value.toLowerCase(), defDocData.userId);
+                        batch.delete(defDoc.ref);
+                    });
+                    const nameMap = new Map();
+                    const updatedDefinitions = [];
+                    for (const def of currentDefinitions) {
+                        const defUserId = definitionMap.get(def);
+                        let userName = "";
+                        if (typeof defUserId !== "undefined") {
+                            if (!nameMap.has(defUserId)) {
+                                const defUserDoc = await _getDoc(doc(game.ref, "users", defUserId));
+                                nameMap.set(defUserId, defUserDoc.data().displayName)
+                            }
+                            userName = nameMap.get(defUserId);
+                        } else {
+                            userName = "Actual";
+                        }
+                        const guessedByIds = [];
+                        const guessedBy = [];
+                        for (const subGuessId of (submittedGuesses.get(def)||[])) {
+                            if (!nameMap.has(subGuessId)) {
+                                const subGuessDoc = await _getDoc(doc(game.ref, "users", subGuessId));
+                                nameMap.set(subGuessId, subGuessDoc.data().displayName)
+                            }
+                            guessedBy.push(nameMap.get(subGuessId));
+                            guessedByIds.push(subGuessId);
+                        }
+                        updatedDefinitions.push({
+                            definition: def,
+                            sourceId: defUserId||"",
+                            source: userName,
+                            guessedBy: guessedBy,
+                            guessedByIds: guessedByIds,
                         });
                     }
-                };
+                    batch.update(game.ref, {
+                        phase: "update-scores",
+                        definitions: updatedDefinitions,
+                    });
+                }
+                await commitBatch(batch);
             }
-        }
-    });
-    if (isOwner) {
-        showElement(gameData.querySelector("#lobbyDiv"));
+        });
         const lobbyQuery = query(collection(db, "lobby"), where("gameName", "==", gameId));
-        lobbyListener = onSnapshot(lobbyQuery, (waiting) => {
+        lobbyListener = _onSnapshot(lobbyQuery, (waiting) => {
             removeAllChildren(lobby);
             waiting.forEach((waitingDoc) => {
                 const data = waitingDoc.data();
@@ -525,30 +725,18 @@ function setListeners(game) {
                 const addButton = document.createElement("button");
                 addButton.classList.add("btn", "btn-primary", "rounded");
                 addButton.appendChild(add);
-                addButton.addEventListener("click", async () => {
-                    try {
-                        await setDoc(doc(game.ref, "users", data.userId), {
-                            displayName: data.displayName,
-                            score: 0
-                        });
-                    } catch (error) {
-                        console.error(error);
-                        return;
-                    }
-                    try {
-                        await deleteDoc(waitingDoc.ref);
-                    } catch (error) {
-                        console.error(error);
-                        return;
-                    }
-                    try {
-                        await updateDoc(doc(db, "users", data.userId), {
-                            currentGame: gameId,
-                        });
-                    } catch (error) {
-                        console.error(error);
-                        return;
-                    }
+                addButton.addEventListener("click", async (e) => {
+                    e.target.parentElement.remove();
+                    const batch = writeBatch(db);
+                    batch.set(doc(game.ref, "users", data.userId), {
+                        displayName: data.displayName,
+                        score: 0
+                    });
+                    batch.delete(waitingDoc.ref);
+                    batch.update(doc(db, "users", data.userId), {
+                        currentGame: gameId,
+                    });
+                    await commitBatch(batch);
                 });
                 item.appendChild(displayName);
                 item.appendChild(addButton);
@@ -556,34 +744,24 @@ function setListeners(game) {
             });
         });
         const definitionsQuery = query(collection(db, "definitionQueue", gameId, "definitions"));
-        definitionsListener = onSnapshot(definitionsQuery, async (defDoc) => {
+        definitionsListener = _onSnapshot(definitionsQuery, async (defDoc) => {
             defDoc.docChanges().forEach(async (change) => {
                 if (change.type == "added") {
                     const changeDocData = change.doc.data();
-                    try {
-                        await updateDoc(doc(db, "games", gameId, "users", changeDocData.userId), {
-                            submitted: true,
-                        });
-                    } catch (error) {
-                        console.error(error);
-                        return;
-                    }
+                    await _updateDoc(doc(db, "games", gameId, "users", changeDocData.userId), {
+                        submitted: true,
+                    });
                 }
             })
         });
         const guessessQuery = query(collection(db, "guessQueue", gameId, "guesses"));
-        guessessListener = onSnapshot(guessessQuery, async (guessDoc) => {
+        guessessListener = _onSnapshot(guessessQuery, async (guessDoc) => {
             guessDoc.docChanges().forEach(async (change) => {
                 if (change.type == "added") {
                     const changeDocData = change.doc.data();
-                    try {
-                        await updateDoc(doc(db, "games", gameId, "users", changeDocData.userId), {
-                            submitted: true,
-                        });
-                    } catch (error) {
-                        console.error(error);
-                        return;
-                    }
+                    await _updateDoc(doc(db, "games", gameId, "users", changeDocData.userId), {
+                        submitted: true,
+                    });
                 }
             })
         });
