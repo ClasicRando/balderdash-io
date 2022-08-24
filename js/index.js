@@ -337,15 +337,20 @@ guessSubmit.addEventListener("submit", async (e) => {
     const value = guessInput.value.trim();
     const invalidInput = guessSubmit.querySelectorAll(".invalid-feedback");
     Array.from(invalidInput).forEach(i => i.remove());
-    if (!value || !Number.isInteger(value)) {
+    if (!value) {
         const invalidInput = document.createElement("div");
         invalidInput.classList.add("invalid-feedback");
-        invalidInput.innerText = "Guess must be a number"
+        invalidInput.innerText = "Guess must not be empty"
         guessInput.parentElement.appendChild(invalidInput);
         guessSubmit.classList.add("was-validated");
         return;
     }
-    const guessNumber = Number.parseInt(value);
+    let guessNumber;
+    try {
+        guessNumber = Number.parseInt(value);
+    } catch(ex) {
+        console.error(ex);
+    }
     const gameDoc = await getGame(doc(db, "games", currentGameId));
     if (guessNumber <= 0 || guessNumber > gameDoc.data().definitions.length) {
         const invalidInput = document.createElement("div");
