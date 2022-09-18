@@ -16,10 +16,14 @@
                 <span id="currentUser" class="navbar-text ms-auto d-none">Current User</span>
                 <button id="signOut" class="btn btn-secondary m-3 d-none">Sign Out</button>
             </nav>
-            <div id="userOptions" class="mx-auto d-none">
-                <button id="btnPlayAnonymously" type="button" class="btn btn-primary">Play Anonymously</button>
-                or
-                <button id="btnSignInModal" type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#signInModal">Sign In</button>
+            <div id="userOptions" class="row d-none">
+                <div class="col-1"></div>
+                <div class="col d-flex flex-row justify-content-center">
+                    <button id="btnPlayAnonymously" type="button" class="btn btn-primary me-2">Play Anonymously</button>
+                    <button id="btnSignInModal" type="button" class="btn btn-primary ms-2 me-2" data-bs-toggle="modal" data-bs-target="#signInModal">Sign In</button>
+                    <button id="btnRequestAccountModal" type="button" class="btn btn-primary ms-2" data-bs-toggle="modal" data-bs-target="#requestAccountModal">Request Account</button>
+                </div>
+                <div class="col-1"></div>
             </div>
             <div id="joinOptions" class="d-none">
                 <form novalidate>
@@ -111,6 +115,28 @@
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                             <button id="signIn" type="submit" class="btn btn-primary">Sign In</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal fade" id="requestAccountModal" tabindex="-1" aria-labelledby="requestAccountModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="requestAccountModalLabel">Request Account</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form id="requestAccountForm">
+                                <div class="mb-3">
+                                    <label for="accountEmail" class="form-label">Email address</label>
+                                    <input type="email" name="email" class="form-control" id="accountEmail" placeholder="name@example.com">
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button id="requestAccount" type="submit" class="btn btn-primary">Request Account</button>
                         </div>
                     </div>
                 </div>

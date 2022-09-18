@@ -26,17 +26,20 @@ const auth = getAuth(app);
 
 let currentUser;
 let currentGameId = null;
-let gameListener = null;
-let gameUserListener = null;
-let lobbyListener = null;
-let joinLobbyReference = null;
-let joinListener = null;
-let definitionsListener = null;
-let guessessListener = null;
-let submittedListener = null;
+let _gameListener = null;
+let _gameUserListener = null;
+let _lobbyListener = null;
+let _joinLobbyReference = null;
+let _joinListener = null;
+let _definitionsListener = null;
+let _guessessListener = null;
+let _submittedListener = null;
 /** @type {HTMLDivElement} */
 const signInModalElement = document.querySelector("#signInModal");
 const signInModal = new bootstrap.Modal(signInModalElement);
+/** @type {HTMLDivElement} */
+const requestAccountModalElement = document.querySelector("#requestAccountModal");
+const requestAccountModal = new bootstrap.Modal(requestAccountModalElement);
 /** @type {HTMLButtonElement} */
 const btnPlayAnonymously = document.querySelector("#btnPlayAnonymously");
 /** @type {HTMLDivElement} */
@@ -49,6 +52,10 @@ const joinOptionsForm = joinOptions.querySelector("form");
 const signInForm = document.querySelector("#signInForm");
 /** @type {HTMLButtonElement} */
 const signInButton = document.querySelector("#signIn");
+/** @type {HTMLFormElement} */
+const requestAccountForm = document.querySelector("#requestAccountForm");
+/** @type {HTMLButtonElement} */
+const requestAccountButton = document.querySelector("#requestAccount");
 /** @type {HTMLSpanElement} */
 const currentUserSpan = document.querySelector("#currentUser");
 /** @type {HTMLButtonElement} */
@@ -69,17 +76,17 @@ const gameName = document.querySelector("#gameName");
 const guessSubmit = document.querySelector("#guessSubmit");
 
 function shuffle(array) {
-    let currentIndex = array.length,  randomIndex;
+    let currentIndex = array.length, randomIndex;
 
     // While there remain elements to shuffle.
     while (currentIndex != 0) {
 
-      // Pick a remaining element.
-      randomIndex = Math.floor(Math.random() * currentIndex);
-      currentIndex--;
+        // Pick a remaining element.
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
 
-      // And swap it with the current element.
-      [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+        // And swap it with the current element.
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
     }
 
     return array;
@@ -129,7 +136,7 @@ async function _getDoc(docRef) {
  * @param {(DocumentSnapshot) => void} action
  * @returns {Promise<QuerySnapshot?>}
  */
-async function _getDocs(query, action=undefined) {
+async function _getDocs(query, action = undefined) {
     try {
         const docs = await getDocs(query);
         if (typeof action !== "undefined") {
@@ -152,6 +159,7 @@ async function _addDoc(collectionRef, data) {
     try {
         return await addDoc(collectionRef, data);
     } catch (error) {
+        console.log({data: data, collection: collectionRef});
         console.error(error);
         return null;
     }
@@ -191,7 +199,7 @@ async function _updateDoc(docRef, data) {
  * @param {() => void | Promise<void>} onCompletion
  * @returns {Unsubscribe?}
  */
-function _onSnapshot(reference, onNext, onError=undefined, onCompletion=undefined) {
+function _onSnapshot(reference, onNext, onError = undefined, onCompletion = undefined) {
     try {
         return onSnapshot(reference, onNext, onError, onCompletion);
     } catch (error) {
@@ -215,8 +223,57 @@ async function commitBatch(batch) {
     }
 }
 
+
+function setJoinForm(options = {}) {
+    const lobbyName = joinOptionsForm.querySelector("input[name=lobbyName]");
+    if ("displayName" in options) {
+        lobbyName.value = options.displayName;
+        lobbyName.setAttribute("readonly", "");
+    } else {
+        lobbyName.value = "";
+        lobbyName.removeAttribute("readonly");
+    }
+    const gameName = joinOptionsForm.querySelector("input[name=gameName]");
+    if ("gameName" in options) {
+        gameName.value = options.gameName;
+        gameName.setAttribute("readonly", "");
+    } else {
+        gameName.value = "";
+        gameName.removeAttribute("readonly");
+    }
+    if ("gameName" in options && "displayName" in options) {
+        btnJoin.innerText = "Cancel Join Request";
+    } else {
+        btnJoin.innerText = "Join";
+    }
+}
+
+/**
+ * 
+ * @param {{}} waitingOptions 
+ * @returns 
+ */
+function setLobbyWaiting(waitingOptions = {}) {
+    if (_joinLobbyReference == null) {
+        setJoinForm();
+        return;
+    }
+    setJoinForm(waitingOptions);
+    _joinListener = _onSnapshot(_joinLobbyReference, async (doc) => {
+        if (doc != null && doc.exists()) {
+            return;
+        }
+        await checkUserGame(gameName);
+    }, async () => {
+        await checkUserGame(gameName);
+    });
+    if (_joinListener == null) {
+        setJoinForm();
+    }
+}
+
 onAuthStateChanged(auth, async (user) => {
-    const wasSignedIn = typeof(currentUser) != "undefined";
+    const wasSignedIn = typeof (currentUser) != "undefined";
     if (wasSignedIn) {
         window.location.reload(true);
         return;
@@ -229,11 +286,15 @@ onAuthStateChanged(auth, async (user) => {
         hideElement(userOptions);
         const game = await getCurrentGame();
         if (game == null) {
+            const lobbyDoc = await joinLobbyDoc();
             showElement(joinOptions);
+            if (lobbyDoc == null) {
+                return;
+            }
+            setLobbyWaiting(lobbyDoc.data());
             return;
         }
         showElement(gameName);
-        currentGameId = game.id;
         setListeners(game);
     } else {
         showElement(userOptions);
@@ -248,6 +309,19 @@ signInButton.addEventListener("click", async () => {
     }
     try {
         await signInWithEmailAndPassword(auth, email, password);
+        signInModal.hide();
+    } catch (error) {
+        console.error(error);
+    }
+});
+requestAccountButton.addEventListener("click", async () => {
+    const formData = new FormData(requestAccountForm);
+    const email = formData.get("email").trim();
+    if (!email) {
+        return;
+    }
+    try {
+        await _addDoc(collection(db, "accountRequests"), {email: email, date: Date.now()});
         signInModal.hide();
     } catch (error) {
         console.error(error);
@@ -268,11 +342,11 @@ signOutButton.addEventListener("click", async () => {
     }
 });
 btnJoin.addEventListener("click", async () => {
-    if (joinListener != null) {
-        joinListener();
-        joinListener = null;
-        await _deleteDoc(joinLobbyReference);
-        btnJoin.innerText = "Join";
+    if (_joinListener != null) {
+        _joinListener();
+        _joinListener = null;
+        await _deleteDoc(_joinLobbyReference);
+        setJoinForm();
         return;
     }
     const formData = new FormData(joinOptionsForm);
@@ -281,28 +355,13 @@ btnJoin.addEventListener("click", async () => {
     if (!lobbyName || !gameName) {
         return;
     }
-    btnJoin.innerText = "Cancel";
-    const joinLobbyReference = await _addDoc(collection(db, "lobby"), {
+    const requestObject = {
         displayName: lobbyName,
         userId: currentUser.uid,
         gameName: gameName,
-    });
-    if (joinLobbyReference == null) {
-        btnJoin.innerText = "Join";
-        return;
-    }
-    joinListener = _onSnapshot(joinLobbyReference, async (doc) => {
-        if (doc != null && doc.exists()) {
-            console.log(doc);
-            return;
-        }
-        await checkUserGame(gameName);
-    }, async () => {
-        await checkUserGame(gameName);
-    });
-    if (joinListener == null) {
-        btnJoin.innerText = "Join";
-    }
+    };
+    _joinLobbyReference = await _addDoc(collection(db, "lobby"), requestObject);
+    setLobbyWaiting(requestObject);
 });
 definitionSubmit.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -348,7 +407,7 @@ guessSubmit.addEventListener("submit", async (e) => {
     let guessNumber;
     try {
         guessNumber = Number.parseInt(value);
-    } catch(ex) {
+    } catch (ex) {
         console.error(ex);
     }
     const gameDoc = await getGame(doc(db, "games", currentGameId));
@@ -385,6 +444,20 @@ async function checkUserGame(gameName) {
     setListeners(game);
 }
 
+async function joinLobbyDoc() {
+    if (currentUser == null) {
+        return null;
+    }
+    const docQuery = query(collection(db, "lobby"), where("userId", "==", currentUser.uid));
+    const lobbyDocs = await _getDocs(docQuery);
+    if (lobbyDocs == null || lobbyDocs.empty) {
+        return null;
+    }
+    const firstLobbyDoc = lobbyDocs.docs[0]
+    _joinLobbyReference = firstLobbyDoc.ref;
+    return firstLobbyDoc
+}
+
 async function getCurrentUser() {
     return await _getDoc(doc(db, "users", currentUser.uid));
 }
@@ -395,6 +468,7 @@ async function getCurrentGame() {
         if (userDoc == null) {
             await _setDoc(doc(db, "users", currentUser.uid), {
                 isAdmin: false,
+                createGame: false,
                 currentGame: null,
             });
             userDoc = await getCurrentUser();
@@ -454,10 +528,14 @@ function updateMap(map, id, value) {
     }
 }
 
+/**
+ * 
+ * @param {DocumentReference} gameRef
+ */
 async function calculateScores(gameRef) {
     const gameDoc = await _getDoc(gameRef);
     const currentWord = gameDoc.data().currentWord;
-    const gameDefinitions = gameDoc.data().definitions||[];
+    const gameDefinitions = gameDoc.data().definitions || [];
     if (!gameDefinitions) {
         return;
     }
@@ -472,7 +550,7 @@ async function calculateScores(gameRef) {
         updateMap(scoreMap, def.sourceId, def.guessedByIds.filter(id => id != def.sourceId).length);
     }
     const batch = writeBatch(db);
-    console.log(scoreMap);
+    // console.log(scoreMap);
     for (const [key, value] of scoreMap) {
         batch.update(doc(gameRef, "users", key), {
             score: increment(value),
@@ -484,22 +562,65 @@ async function calculateScores(gameRef) {
     });
     commitBatch(batch);
 }
+/**
+ * 
+ * @param {Array<string | object> | undefined} definitions
+ */
+function showDefinitions(definitions) {
+    removeAllChildren(definitionsList);
+    if (typeof definitions === "undefined" | definitions.length === 0) {
+        return;
+    }
+    if (typeof definitions[0] === "string") {
+        for (const d of definitions) {
+            const item = document.createElement("li");
+            item.classList.add("list-group-item");
+            item.innerText = d;
+            definitionsList.appendChild(item);
+        }
+        return;
+    }
+    for (const d of definitions) {
+        const item = document.createElement("li");
+        item.classList.add("list-group-item");
+        const def = document.createElement("p");
+        def.innerText = `Definition: ${d.definition}`;
+        const guessedBy = document.createElement("p");
+        guessedBy.innerText = `Guessed By: ${d.guessedBy.join(",")}`;
+        const source = document.createElement("p");
+        source.innerText = `Source: ${d.source}`;
+        item.appendChild(def);
+        item.appendChild(guessedBy);
+        item.appendChild(source);
+        definitionsList.appendChild(item);
+    }
+}
 
-function setListeners(game) {
-    const gameId = game.id;
-    currentGameId = gameId;
-    gameName.innerText = gameId;
-    const isOwner = game.data().ownerUID == currentUser.uid;
-    showElement(gameData);
+/**
+ * 
+ * @param {Array<string>} words 
+ */
+function showUsedWords(pastWords, words) {
+    removeAllChildren(pastWords);
+    for (const word of words) {
+        const item = document.createElement("li");
+        item.classList.add("list-group-item");
+        item.innerText = word;
+        pastWords.appendChild(item);
+    }
+}
+
+/**
+ * 
+ * @param {boolean} isOwner 
+ */
+function startGameListener(game, isOwner) {
     const currentWord = gameData.querySelector("#currentWord");
     const phase = gameData.querySelector("#phase");
     const nextRound = gameData.querySelector("#btnNextRound");
     const pastWords = gameData.querySelector("#pastWords");
-    const members = gameData.querySelector("#members");
-    const lobby = gameData.querySelector("#lobby");
     removeAllChildren(pastWords);
-    removeAllChildren(lobby);
-    gameListener = _onSnapshot(game.ref, async (doc) => {
+    _gameListener = _onSnapshot(game.ref, async (doc) => {
         const data = doc.data();
         currentWord.value = data.currentWord;
         if (isOwner && (data.phase == "round-end" || data.phase == "pre-game")) {
@@ -531,15 +652,7 @@ function setListeners(game) {
                     showElement(guessSubmit);
                     showElement(definitions);
                 }
-                removeAllChildren(definitionsList);
-                if ("definitions" in data) {
-                    for (const d of data.definitions) {
-                        const item = document.createElement("li");
-                        item.classList.add("list-group-item");
-                        item.innerText = d;
-                        definitionsList.appendChild(item);
-                    }
-                }
+                showDefinitions(data.definitions);
                 hideElement(definitionSubmit);
                 break;
             case "update-scores":
@@ -551,34 +664,37 @@ function setListeners(game) {
                 hideElement(definitionSubmit);
                 hideElement(guessSubmit);
                 showElement(definitions);
-                removeAllChildren(definitionsList);
-                if ("definitions" in data) {
-                    for (const d of data.definitions) {
-                        const item = document.createElement("li");
-                        item.classList.add("list-group-item");
-                        const def = document.createElement("p");
-                        def.innerText = `Definition: ${d.definition}`;
-                        const guessedBy = document.createElement("p");
-                        guessedBy.innerText = `Guessed By: ${d.guessedBy.join(",")}`;
-                        const source = document.createElement("p");
-                        source.innerText = `Source: ${d.source}`;
-                        item.appendChild(def);
-                        item.appendChild(guessedBy);
-                        item.appendChild(source);
-                        definitionsList.appendChild(item);
-                    }
-                }
+                showDefinitions(data.definitions);
                 break;
         }
-        removeAllChildren(pastWords);
-        for (const word of data.usedWords) {
-            const item = document.createElement("li");
-            item.classList.add("list-group-item");
-            item.innerText = word;
-            pastWords.appendChild(item);
-        }
+        showUsedWords(pastWords, data.usedWords);
     });
-    gameUserListener = _onSnapshot(collection(game.ref, "users"), async (shapshot) => {
+    if (isOwner) {
+        nextRound.addEventListener("click", async () => {
+            const usedWords = (await getGame(game.ref)).data().usedWords || [];
+            const words = [];
+            let currentWord;
+            await _getDocs(query(collection(db, "words")), (word) => {
+                words.push(word.id);
+            });
+            for (const word of shuffle(words)) {
+                if (!usedWords.includes(word)) {
+                    currentWord = word;
+                    break;
+                }
+            }
+            await _updateDoc(game.ref, {
+                phase: "submit-definition",
+                currentWord: currentWord,
+                definitions: [],
+            });
+        });
+    }
+}
+
+function startGameUserListener(game) {
+    const members = gameData.querySelector("#members");
+    _gameUserListener = _onSnapshot(collection(game.ref, "users"), async (shapshot) => {
         removeAllChildren(members);
         let submitCount = 0;
         shapshot.forEach((gameUserDoc) => {
@@ -605,171 +721,189 @@ function setListeners(game) {
             members.appendChild(item);
         });
     });
-    if (isOwner) {
-        nextRound.addEventListener("click", async () => {
-            const usedWords = (await getGame(game.ref)).data().usedWords||[];
-            const words = [];
-            let currentWord;
-            await _getDocs(query(collection(db, "words")), (word) => {
-                words.push(word.id);
-            });
-            for (const word of shuffle(words)) {
-                if (!usedWords.includes(word)) {
-                    currentWord = word;
-                    break;
-                }
+}
+
+async function submitDefinitionPhase(game, gameWord, batch) {
+    const actualDefinition = gameWord != null
+        ? (await _getDoc(doc(db, "words", gameWord))).data().definition
+        : "";
+    const submittedDefinitions = [];
+    await _getDocs(collection(db, "definitionQueue", currentGameId, "definitions"), (defDoc) => {
+        submittedDefinitions.push(defDoc.data().value.toLowerCase());
+    });
+    submittedDefinitions.push(actualDefinition);
+    batch.update(game.ref, {
+        phase: "submit-guess",
+        guesses: [],
+        definitions: shuffle(submittedDefinitions),
+    });
+}
+
+async function submitGuessPhase(game, currentDefinitions, batch) {
+    const submittedGuesses = new Map();
+    await _getDocs(collection(db, "guessQueue", currentGameId, "guesses"), (guessDoc) => {
+        const guessDocData = guessDoc.data();
+        const guessDefinition = currentDefinitions[guessDocData.value - 1];
+        const currentIds = submittedGuesses.get(guessDefinition);
+        if (typeof currentIds === "undefined") {
+            submittedGuesses.set(guessDefinition, [guessDocData.userId]);
+        } else {
+            currentIds.push(guessDocData.userId)
+            submittedGuesses.set(guessDefinition, currentIds);
+        }
+        batch.delete(guessDoc.ref);
+    });
+    const definitionMap = new Map();
+    await _getDocs(collection(db, "definitionQueue", currentGameId, "definitions"), (defDoc) => {
+        const defDocData = defDoc.data();
+        definitionMap.set(defDocData.value.toLowerCase(), defDocData.userId);
+        batch.delete(defDoc.ref);
+    });
+    const nameMap = new Map();
+    const updatedDefinitions = [];
+    for (const def of currentDefinitions) {
+        const defUserId = definitionMap.get(def);
+        let userName = "";
+        if (typeof defUserId !== "undefined") {
+            if (!nameMap.has(defUserId)) {
+                const defUserDoc = await _getDoc(doc(game.ref, "users", defUserId));
+                nameMap.set(defUserId, defUserDoc.data().displayName)
             }
-            await _updateDoc(game.ref, {
-                phase: "submit-definition",
-                currentWord: currentWord,
-                definitions: [],
+            userName = nameMap.get(defUserId);
+        } else {
+            userName = "Actual";
+        }
+        const guessedByIds = [];
+        const guessedBy = [];
+        for (const subGuessId of (submittedGuesses.get(def) || [])) {
+            if (!nameMap.has(subGuessId)) {
+                const subGuessDoc = await _getDoc(doc(game.ref, "users", subGuessId));
+                nameMap.set(subGuessId, subGuessDoc.data().displayName)
+            }
+            guessedBy.push(nameMap.get(subGuessId));
+            guessedByIds.push(subGuessId);
+        }
+        updatedDefinitions.push({
+            definition: def,
+            sourceId: defUserId || "",
+            source: userName,
+            guessedBy: guessedBy,
+            guessedByIds: guessedByIds,
+        });
+    }
+    batch.update(game.ref, {
+        phase: "update-scores",
+        definitions: updatedDefinitions,
+    });
+}
+
+function startSubmittedListener(game) {
+    const submittedQuery = query(collection(game.ref, "users"), where("submitted", "==", true));
+    _submittedListener = _onSnapshot(submittedQuery, async (submitted) => {
+        const users = await _getDocs(collection(game.ref, "users"));
+        const userCount = users != null ? users.size : 0;
+        if (userCount == 0 || userCount != submitted.size) {
+            return;
+        }
+        const batch = writeBatch(db);
+        users.forEach(async (gameUserDoc) => {
+            batch.update(gameUserDoc.ref, {
+                submitted: false,
             });
         });
-        showElement(gameData.querySelector("#lobbyDiv"));
-        const submittedQuery = query(collection(game.ref, "users"), where("submitted", "==", true));
-        submittedListener = _onSnapshot(submittedQuery, async (submitted) => {
-            const users = await _getDocs(collection(game.ref, "users"));
-            const userCount = users != null ? users.size : 0;
-            if (userCount > 0 && userCount == submitted.size) {
+        let gameDoc = await _getDoc(game.ref);
+        const currentPhase = gameDoc.data().phase;
+        if (currentPhase == "submit-definition") {
+            const gameWord = gameDoc.data().currentWord;
+            await submitDefinitionPhase(game, gameWord, batch);
+        } else if (currentPhase == "submit-guess") {
+            const currentDefinitions = gameDoc.data().definitions;
+            await submitGuessPhase(game, currentDefinitions, batch);
+        }
+        await commitBatch(batch);
+    });
+}
+
+function startLobbyListener(game) {
+    const lobbyQuery = query(collection(db, "lobby"), where("gameName", "==", currentGameId));
+    _lobbyListener = _onSnapshot(lobbyQuery, (waiting) => {
+        removeAllChildren(lobby);
+        waiting.forEach((waitingDoc) => {
+            const data = waitingDoc.data();
+            const item = document.createElement("li");
+            item.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-start");
+            const displayName = document.createElement("div");
+            displayName.classList.add("me-auto");
+            displayName.innerText = data.displayName;
+            const add = document.createElement("i");
+            add.classList.add("fa-solid", "fa-plus");
+            const addButton = document.createElement("button");
+            addButton.classList.add("btn", "btn-primary", "rounded");
+            addButton.appendChild(add);
+            addButton.addEventListener("click", async (e) => {
+                e.target.setAttribute("disabled", "");
                 const batch = writeBatch(db);
-                users.forEach(async (gameUserDoc) => {
-                    batch.update(gameUserDoc.ref, {
-                        submitted: false,
-                    });
+                batch.set(doc(game.ref, "users", data.userId), {
+                    displayName: data.displayName,
+                    score: 0
                 });
-                let gameDoc = await _getDoc(game.ref);
-                const currentPhase = gameDoc.data().phase;
-                const gameWord = gameDoc.data().currentWord;
-                if (currentPhase == "submit-definition") {
-                    const actualDefinition = gameWord != null
-                        ? (await _getDoc(doc(db, "words", gameWord))).data().definition
-                        : "";
-                    const submittedDefinitions = [];
-                    await _getDocs(collection(db, "definitionQueue", currentGameId, "definitions"), (defDoc) => {
-                        submittedDefinitions.push(defDoc.data().value.toLowerCase());
-                    });
-                    submittedDefinitions.push(actualDefinition);
-                    batch.update(game.ref, {
-                        phase: "submit-guess",
-                        guesses: [],
-                        definitions: shuffle(submittedDefinitions),
-                    });
-                } else if (currentPhase == "submit-guess") {
-                    const currentDefinitions = gameDoc.data().definitions;
-                    const submittedGuesses = new Map();
-                    await _getDocs(collection(db, "guessQueue", currentGameId, "guesses"), (guessDoc) => {
-                        const guessDocData = guessDoc.data();
-                        const guessDefinition = currentDefinitions[guessDocData.value - 1];
-                        const currentIds = submittedGuesses.get(guessDefinition);
-                        if (typeof currentIds === "undefined") {
-                            submittedGuesses.set(guessDefinition, [guessDocData.userId]);
-                        } else {
-                            currentIds.push(guessDocData.userId)
-                            submittedGuesses.set(guessDefinition, currentIds);
-                        }
-                        batch.delete(guessDoc.ref);
-                    });
-                    const definitionMap = new Map();
-                    await _getDocs(collection(db, "definitionQueue", currentGameId, "definitions"), (defDoc) => {
-                        const defDocData = defDoc.data();
-                        definitionMap.set(defDocData.value.toLowerCase(), defDocData.userId);
-                        batch.delete(defDoc.ref);
-                    });
-                    const nameMap = new Map();
-                    const updatedDefinitions = [];
-                    for (const def of currentDefinitions) {
-                        const defUserId = definitionMap.get(def);
-                        let userName = "";
-                        if (typeof defUserId !== "undefined") {
-                            if (!nameMap.has(defUserId)) {
-                                const defUserDoc = await _getDoc(doc(game.ref, "users", defUserId));
-                                nameMap.set(defUserId, defUserDoc.data().displayName)
-                            }
-                            userName = nameMap.get(defUserId);
-                        } else {
-                            userName = "Actual";
-                        }
-                        const guessedByIds = [];
-                        const guessedBy = [];
-                        for (const subGuessId of (submittedGuesses.get(def)||[])) {
-                            if (!nameMap.has(subGuessId)) {
-                                const subGuessDoc = await _getDoc(doc(game.ref, "users", subGuessId));
-                                nameMap.set(subGuessId, subGuessDoc.data().displayName)
-                            }
-                            guessedBy.push(nameMap.get(subGuessId));
-                            guessedByIds.push(subGuessId);
-                        }
-                        updatedDefinitions.push({
-                            definition: def,
-                            sourceId: defUserId||"",
-                            source: userName,
-                            guessedBy: guessedBy,
-                            guessedByIds: guessedByIds,
-                        });
-                    }
-                    batch.update(game.ref, {
-                        phase: "update-scores",
-                        definitions: updatedDefinitions,
-                    });
-                }
+                batch.delete(waitingDoc.ref);
+                batch.update(doc(db, "users", data.userId), {
+                    currentGame: currentGameId,
+                });
                 await commitBatch(batch);
-            }
-        });
-        const lobbyQuery = query(collection(db, "lobby"), where("gameName", "==", gameId));
-        lobbyListener = _onSnapshot(lobbyQuery, (waiting) => {
-            removeAllChildren(lobby);
-            waiting.forEach((waitingDoc) => {
-                const data = waitingDoc.data();
-                const item = document.createElement("li");
-                item.classList.add("list-group-item", "d-flex", "justify-content-between", "align-items-start");
-                const displayName = document.createElement("div");
-                displayName.classList.add("me-auto");
-                displayName.innerText = data.displayName;
-                const add = document.createElement("i");
-                add.classList.add("fa-solid", "fa-plus");
-                const addButton = document.createElement("button");
-                addButton.classList.add("btn", "btn-primary", "rounded");
-                addButton.appendChild(add);
-                addButton.addEventListener("click", async (e) => {
-                    e.target.parentElement.remove();
-                    const batch = writeBatch(db);
-                    batch.set(doc(game.ref, "users", data.userId), {
-                        displayName: data.displayName,
-                        score: 0
-                    });
-                    batch.delete(waitingDoc.ref);
-                    batch.update(doc(db, "users", data.userId), {
-                        currentGame: gameId,
-                    });
-                    await commitBatch(batch);
-                });
-                item.appendChild(displayName);
-                item.appendChild(addButton);
-                lobby.appendChild(item);
+                e.target.parentElement.remove();
             });
+            item.appendChild(displayName);
+            item.appendChild(addButton);
+            lobby.appendChild(item);
         });
-        const definitionsQuery = query(collection(db, "definitionQueue", gameId, "definitions"));
-        definitionsListener = _onSnapshot(definitionsQuery, async (defDoc) => {
-            defDoc.docChanges().forEach(async (change) => {
-                if (change.type == "added") {
-                    const changeDocData = change.doc.data();
-                    await _updateDoc(doc(db, "games", gameId, "users", changeDocData.userId), {
-                        submitted: true,
-                    });
-                }
-            })
-        });
-        const guessessQuery = query(collection(db, "guessQueue", gameId, "guesses"));
-        guessessListener = _onSnapshot(guessessQuery, async (guessDoc) => {
-            guessDoc.docChanges().forEach(async (change) => {
-                if (change.type == "added") {
-                    const changeDocData = change.doc.data();
-                    await _updateDoc(doc(db, "games", gameId, "users", changeDocData.userId), {
-                        submitted: true,
-                    });
-                }
-            })
-        });
+    });
+}
+
+function startDefinitionListener(game) {
+    const definitionsQuery = query(collection(db, "definitionQueue", currentGameId, "definitions"));
+    _definitionsListener = _onSnapshot(definitionsQuery, async (defDoc) => {
+        defDoc.docChanges().forEach(async (change) => {
+            if (change.type == "added") {
+                const changeDocData = change.doc.data();
+                await _updateDoc(doc(game.ref, "users", changeDocData.userId), {
+                    submitted: true,
+                });
+            }
+        })
+    });
+}
+
+function startGuessesListener(game) {
+    const guessessQuery = query(collection(db, "guessQueue", currentGameId, "guesses"));
+    _guessessListener = _onSnapshot(guessessQuery, async (guessDoc) => {
+        guessDoc.docChanges().forEach(async (change) => {
+            if (change.type == "added") {
+                const changeDocData = change.doc.data();
+                await _updateDoc(doc(game.ref, "users", changeDocData.userId), {
+                    submitted: true,
+                });
+            }
+        })
+    });
+}
+
+function setListeners(game) {
+    currentGameId = game.id;
+    gameName.innerText = currentGameId;
+    const isOwner = game.data().ownerUID == currentUser.uid;
+    showElement(gameData);
+    const lobby = gameData.querySelector("#lobby");
+    removeAllChildren(lobby);
+    startGameListener(game, isOwner);
+    startGameUserListener(game);
+    if (isOwner) {
+        showElement(gameData.querySelector("#lobbyDiv"));
+        startSubmittedListener(game);
+        startLobbyListener(game);
+        startDefinitionListener(game);
+        startGuessesListener(game);
     } else {
         hideElement(gameData.querySelector("#lobbyDiv"));
     }
